@@ -8,12 +8,18 @@ data QueryNode e = Term e
                     | Not (QueryNode e)
 
 data Token = LParen | RParen | Text String
+  deriving (Show)
 
 type TagMap = [(String, Int)]
 
 -- tokenizes a query to be parsed
 tokenizeQuery :: String -> [Token]
-tokenizeQuery = undefined
+tokenizeQuery ""       = []
+tokenizeQuery (' ':cs) = tokenizeQuery cs
+tokenizeQuery ('(':cs) = LParen : tokenizeQuery cs
+tokenizeQuery (')':cs) = RParen : tokenizeQuery cs
+tokenizeQuery cs       = Text token : tokenizeQuery rest
+  where (token, rest) = break (`elem` "() ") cs
 
 -- parse a query to be executed against a set
 parseQuery :: [Token] -> State TagMap (QueryNode Int)
