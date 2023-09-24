@@ -25,9 +25,16 @@ data QueryExpr e = TermExpr e
 data Token = LParen | RParen | AndTok | OrTok | NotTok | Text String
   deriving (Show, Eq)
 
-type TagMap = [(String, Int)]
-type ParserResult = Maybe (QueryExpr String, [Token])
-type Parser = [Token] -> ParserResult
+type TagMap = (Int, [(String, Int)])
+type ParserResult = Maybe (QueryExpr Int, ([Token], TagMap))
+type Parser = [Token] -> TagMap -> Maybe (QueryExpr Int, ([Token], TagMap))
+
+getAndAddTag :: TagMap -> String -> (TagMap, Int)
+getAndAddTag (i, m) s =
+  case entries of 
+    [] -> ((i + 1, (s, i) : m), i)
+    [(s', i')] -> ((i, m), i')
+  where entries = filter (\x -> s == fst x) m
 
 -- tokenizes a query to be parsed
 lexQuery :: String -> [Token]
@@ -54,31 +61,32 @@ lexQuery (c:cs)       = tokenToOp token' : lexQuery rest
 -- on hitting a recursive expression, it attempts to "extend" the expression, checking if it
 -- is part of a larger left recursive branch of the grammar.
 -- essentially going from bottom up instead of top down.
-parseExpr :: Parser
-parseExpr ((Text s):ts) = extendExpr (TermExpr s) ts
-parseExpr (NotTok:ts) =
-  case parseExpr ts of
-    Just (e, ts') -> extendExpr (NotExpr e) ts'
+parseExpr :: [Token] -> TagMap -> Maybe (QueryExpr Int, ([Token], TagMap))
+parseExpr ((Text s):ts) m = extendExpr (TermExpr i') ts m'
+  where (m', i') = getAndAddTag m s
+parseExpr (NotTok:ts) m =
+  case parseExpr ts m of
+    Just (e, (ts', m')) -> extendExpr (NotExpr e) ts' m'
     Nothing -> Nothing
-parseExpr (LParen:ts) =
-  case parseExpr ts of
-    Just (e, RParen:ts') -> extendExpr e ts'
+parseExpr (LParen:ts) m =
+  case parseExpr ts m of
+    Just (e, (RParen:ts', m')) -> extendExpr e ts' m'
     Nothing -> Nothing
-parseExpr _ = Nothing
+parseExpr _ _ = Nothing
 
-extendExpr :: QueryExpr String -> Parser
-extendExpr e (AndTok:ts) =
-  case parseExpr ts of
-    Just (e', ts') -> extendExpr (AndExpr e e') ts'
+extendExpr :: QueryExpr Int -> [Token] -> TagMap -> Maybe (QueryExpr Int, ([Token], TagMap))
+extendExpr e (AndTok:ts) m =
+  case parseExpr ts m of
+    Just (e', (ts', m')) -> extendExpr (AndExpr e e') ts' m'
     Nothing -> Nothing
-extendExpr e (OrTok:ts) =
-  case parseExpr ts of
-    Just (e', ts') -> extendExpr (OrExpr e e') ts'
+extendExpr e (OrTok:ts) m =
+  case parseExpr ts m of
+    Just (e', (ts', m')) -> extendExpr (OrExpr e e') ts' m'
     Nothing -> Nothing
-extendExpr e ts = Just (e, ts)
+extendExpr e ts m = Just (e, (ts, m))
 
-parseQuery :: [Token] -> Maybe (QueryExpr String)
-parseQuery ts = fst <$> parseExpr ts
+parseQuery :: [Token] -> Maybe (QueryExpr Int)
+parseQuery ts = fst <$> parseExpr ts (0, [])
     
 -- execute a query against a single object
 executeQuery :: TagMap -> QueryExpr Int -> IntSet -> Bool
