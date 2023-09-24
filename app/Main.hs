@@ -30,15 +30,15 @@ type ParserResult = Maybe (QueryExpr String, [Token])
 type Parser = [Token] -> ParserResult
 
 -- tokenizes a query to be parsed
-tokenizeQuery :: String -> [Token]
-tokenizeQuery ""       = []
-tokenizeQuery (' ':cs) = tokenizeQuery cs
-tokenizeQuery ('(':cs) = LParen : tokenizeQuery cs
-tokenizeQuery (')':cs) = RParen : tokenizeQuery cs
-tokenizeQuery ('&':cs) = AndTok : tokenizeQuery cs
-tokenizeQuery ('|':cs) = OrTok : tokenizeQuery cs
-tokenizeQuery ('!':cs) = NotTok : tokenizeQuery cs
-tokenizeQuery (c:cs)       = tokenToOp token' : tokenizeQuery rest
+lexQuery :: String -> [Token]
+lexQuery ""       = []
+lexQuery (' ':cs) = lexQuery cs
+lexQuery ('(':cs) = LParen : lexQuery cs
+lexQuery (')':cs) = RParen : lexQuery cs
+lexQuery ('&':cs) = AndTok : lexQuery cs
+lexQuery ('|':cs) = OrTok : lexQuery cs
+lexQuery ('!':cs) = NotTok : lexQuery cs
+lexQuery (c:cs)       = tokenToOp token' : lexQuery rest
   where (token, rest) = break (`elem` "() &!|") cs
         token' = toLower c : map toLower token
         tokenToOp :: String -> Token
@@ -76,6 +76,9 @@ extendExpr e (OrTok:ts) =
     Just (e', ts') -> extendExpr (OrExpr e e') ts'
     Nothing -> Nothing
 extendExpr e ts = Just (e, ts)
+
+parseQuery :: [Token] -> Maybe (QueryExpr String)
+parseQuery ts = fst <$> parseExpr ts
     
 -- execute a query against a single object
 executeQuery :: TagMap -> QueryExpr Int -> IntSet -> Bool
