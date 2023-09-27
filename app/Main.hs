@@ -1,9 +1,12 @@
 module Main where
-import Data.IntSet (IntSet)
+import Data.IntSet (IntSet, member, insert, empty)
 import Control.Monad.State
 import Data.Monoid
 import Data.Char
 import Control.Arrow (Arrow(first))
+import qualified Data.Foldable as Data.IntSet
+import qualified Data.IntMap as Prelude
+import System.Environment
 
 {-
   GRAMMAR:
@@ -35,6 +38,8 @@ getAndAddTag (i, m) s =
     [] -> ((i + 1, (s, i) : m), i)
     [(s', i')] -> ((i, m), i')
   where entries = filter (\x -> s == fst x) m
+
+getAndAddTag' s m = getAndAddTag m s
 
 -- tokenizes a query to be parsed
 lexQuery :: String -> [Token]
@@ -89,12 +94,37 @@ parseQuery :: [Token] -> Maybe (QueryExpr Int)
 parseQuery ts = fst <$> parseExpr ts (0, [])
     
 -- execute a query against a single object
-executeQuery :: TagMap -> QueryExpr Int -> IntSet -> Bool
-executeQuery = undefined
+executeQuery :: QueryExpr Int -> IntSet -> Bool
+executeQuery (TermExpr i)  s = i `member` s
+executeQuery (NotExpr e)   s = not $ executeQuery e s
+executeQuery (AndExpr l r) s = executeQuery l s && executeQuery r s
+executeQuery (OrExpr l r)  s = executeQuery l s || executeQuery r s
+
+parseSet' :: TagMap -> IntSet -> [String] -> (IntSet, TagMap)
+parseSet' m s []     = (s, m)
+parseSet' m s (t:ts) = parseSet' m' s' ts
+  where
+   (m', i) = getAndAddTag m t
+   s' = insert i s
 
 -- parse a set of values into a set object which a query can be executed against
-parseSet :: String -> State TagMap IntSet
-parseSet = undefined
+parseSet :: TagMap -> String -> (IntSet, TagMap)
+parseSet m s = parseSet' m empty (words s)
+
+parseSets :: TagMap -> [String] -> ([IntSet], TagMap)
+parseSets m [] = ([], m)
+parseSets m (s:ss) = (i:is, m'')
+  where
+    (i, m') = parseSet m s
+    (is, m'') = parseSets m' ss
 
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = do
+  args <- getArgs
+  let ([rawQuery], objects) = splitAt 1 args
+  let Just (q, (_, m)) = parseExpr (lexQuery rawQuery) (0, [])
+  let (os, _) = parseSets m objects
+  let results = map (executeQuery q) os
+  mapM_ print results
+  
+  
