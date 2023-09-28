@@ -100,23 +100,18 @@ executeQuery (NotExpr e)   s = not $ executeQuery e s
 executeQuery (AndExpr l r) s = executeQuery l s && executeQuery r s
 executeQuery (OrExpr l r)  s = executeQuery l s || executeQuery r s
 
-parseSet' :: TagMap -> IntSet -> [String] -> (IntSet, TagMap)
-parseSet' m s []     = (s, m)
-parseSet' m s (t:ts) = parseSet' m' s' ts
+parseTag :: String -> (IntSet, TagMap) -> (IntSet, TagMap)
+parseTag t (s, m) = (insert i s, m')
   where
-   (m', i) = getAndAddTag m t
-   s' = insert i s
+    (m', i) = getAndAddTag m t
 
--- parse a set of values into a set object which a query can be executed against
-parseSet :: TagMap -> String -> (IntSet, TagMap)
-parseSet m s = parseSet' m empty (words s)
+parseSets' :: String -> ([IntSet], TagMap) -> ([IntSet], TagMap)
+parseSets' s (is, m) = (i:is, m')
+  where 
+    (i, m') = foldr parseTag (empty, m) (words s)
 
 parseSets :: TagMap -> [String] -> ([IntSet], TagMap)
-parseSets m [] = ([], m)
-parseSets m (s:ss) = (i:is, m'')
-  where
-    (i, m') = parseSet m s
-    (is, m'') = parseSets m' ss
+parseSets m = foldr parseSets' ([], m)
 
 main :: IO ()
 main = do
