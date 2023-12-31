@@ -2,17 +2,14 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Main where
-import Data.IntSet (IntSet, member, insert)
-import qualified Data.IntSet as IntSet (empty)
+import Data.Set (Set, member, insert, fromList)
 import Control.Monad.State
 import Control.Monad (guard)
 import Control.Applicative (Alternative(..))
 import Data.Monoid
-import Data.Char
 import Control.Arrow (Arrow(first))
-import qualified Data.Foldable as IntSet
-import qualified Data.IntMap as Prelude
 import System.Environment
+import Data.Char
 
 {-
   GRAMMAR:
@@ -35,22 +32,6 @@ import System.Environment
   <unaryop> ::= "not"
 -}
 
-data Expr e = Term e
-                  | And (Expr e) (Expr e) 
-                  | Or (Expr e) (Expr e) 
-                  | Not (Expr e)
-                  deriving (Show)
-
-type PExpr = Expr String
-
-instance Functor Expr where
-  fmap :: (a -> b) -> Expr a -> Expr b
-  fmap f (Term e)  = Term (f e)
-  fmap f (And l r) = And (fmap f l) (fmap f r)
-  fmap f (Or l r) = Or (fmap f l) (fmap f r)
-  fmap f (Not t) = Not (fmap f t)
-
-type TagMap = (Int, [(String, Int)])
 newtype Parser a = Parser { unParser :: StateT String Maybe a }
 
 runParser :: Parser a -> String -> Maybe (a, String)
@@ -115,62 +96,41 @@ chainl1 p op = do
               b <- p
               rest (f a b)) <|> pure a
 
-unaryop :: Parser (PExpr -> PExpr)
-unaryop = sym "not" *> pure Not
+unaryop :: Parser (Bool -> Bool)
+unaryop = sym "not" *> pure not
 
-orop :: Parser (PExpr -> PExpr -> PExpr)
-orop = (sym "or" <|> sym "|") *> pure Or
+orop :: Parser (Bool -> Bool -> Bool)
+orop = (sym "or" <|> sym "|") *> pure (||)
 
-andop :: Parser (PExpr -> PExpr -> PExpr)
-andop = (sym "and" <|> sym "&") *> pure And
+andop :: Parser (Bool -> Bool -> Bool)
+andop = (sym "and" <|> sym "&") *> pure (&&)
 
-term :: Parser PExpr
-term = Term <$> token (some $ satisfy $ not . isSpace)
+term :: Set String -> Parser Bool
+term s = do
+  t <- token (some $ satisfy $ not . isSpace)
+  return (t `member` s)
 
-terminal :: Parser PExpr
-terminal = (unaryop <*> disjunction) <|> (sym "(" *> disjunction <* sym ")") <|> term
+terminal :: Set String -> Parser Bool
+terminal s = (unaryop <*> disjunction s) <|> (sym "(" *> disjunction s <* sym ")") <|> term s
 
-conjunction :: Parser PExpr
-conjunction = chainl1 terminal andop <|> terminal
+conjunction :: Set String -> Parser Bool
+conjunction s = chainl1 (terminal s) andop <|> terminal s
 
-disjunction :: Parser PExpr
-disjunction = chainl1 conjunction orop <|> conjunction
+disjunction :: Set String -> Parser Bool
+disjunction s = chainl1 (conjunction s) orop <|> conjunction s
 
-getAndAddTag :: TagMap -> String -> (TagMap, Int)
-getAndAddTag (i, m) s =
-  case entries of 
-    [] -> ((i + 1, (s, i) : m), i)
-    [(s', i')] -> ((i, m), i')
-  where entries = filter (\x -> s == fst x) m
-    
--- execute a query against a single object
-executeQuery :: Expr Int -> IntSet -> Bool
-executeQuery (Term i)  s = i `member` s
-executeQuery (Not e)   s = not $ executeQuery e s
-executeQuery (And l r) s = executeQuery l s && executeQuery r s
-executeQuery (Or l r)  s = executeQuery l s || executeQuery r s
-
-parseTag :: String -> (IntSet, TagMap) -> (IntSet, TagMap)
-parseTag t (s, m) = (insert i s, m')
-  where
-    (m', i) = getAndAddTag m t
-
-parseSets' :: String -> ([IntSet], TagMap) -> ([IntSet], TagMap)
-parseSets' s (is, m) = (i:is, m')
-  where 
-    (i, m') = foldr parseTag (IntSet.empty, m) (words s)
-
-parseSets :: TagMap -> [String] -> ([IntSet], TagMap)
-parseSets m = foldr parseSets' ([], m)
+parse :: Set String -> Parser Bool
+parse = disjunction
 
 main :: IO ()
-main = undefined
--- main = do
---   args <- getArgs
---   let ([rawQuery], objects) = splitAt 1 args
---   let Just (q, (_, m)) = parseExpr (lexQuery rawQuery) (0, [])
---   let (os, _) = parseSets m objects
---   let results = map (executeQuery q) os
---   mapM_ print results
-  
-  
+main = do
+  args <- getArgs
+  let query = head args
+  let set' = fromList $ words $ map toLower $ unwords $ tail args
+  showResult $ runParser (parse set') query
+  where
+    showResult :: Maybe (Bool, String) -> IO ()
+    showResult (Just (b, s))
+      | null s = print b
+      | otherwise = print $ "Parsing error: left over tokens are " ++ s
+    showResult Nothing = print "Parsing error: no match"
