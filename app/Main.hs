@@ -97,7 +97,7 @@ chainl1 p op = do
               rest (f a b)) <|> pure a
 
 unaryop :: Parser (Bool -> Bool)
-unaryop = sym "not" *> pure not
+unaryop = (sym "not" <|> sym "!") *> pure not
 
 orop :: Parser (Bool -> Bool -> Bool)
 orop = (sym "or" <|> sym "|") *> pure (||)
@@ -105,10 +105,14 @@ orop = (sym "or" <|> sym "|") *> pure (||)
 andop :: Parser (Bool -> Bool -> Bool)
 andop = (sym "and" <|> sym "&") *> pure (&&)
 
+
 term :: Set String -> Parser Bool
 term s = do
-  t <- token (some $ satisfy $ not . isSpace)
+  t <- token (some $ satisfy validChar)
   return (t `member` s)
+  where
+    validChar :: Char -> Bool
+    validChar c = not $ isSpace c || (c == ')') || (c == '(')
 
 terminal :: Set String -> Parser Bool
 terminal s = (unaryop <*> disjunction s) <|> (sym "(" *> disjunction s <* sym ")") <|> term s
